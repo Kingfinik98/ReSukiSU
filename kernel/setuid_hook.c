@@ -32,7 +32,6 @@
 #include "kernel_umount.h"
 #include "sulog.h"
 
-extern u32 ksu_zygote_sid;
 #ifdef CONFIG_KSU_SUSFS
 static inline bool is_zygote_isolated_service_uid(uid_t uid)
 {
@@ -60,7 +59,7 @@ extern void disable_seccomp(struct task_struct *tsk);
 int ksu_handle_setuid(uid_t new_uid, uid_t old_uid, uid_t euid) // (new_euid)
 {
     // We only interest in process spwaned by zygote
-    if (!ksu_is_sid_equal(current_cred(), ksu_zygote_sid)) {
+    if (!is_zygote(current_cred())) {
         return 0;
     }
 
@@ -127,7 +126,7 @@ int ksu_handle_setuid(uid_t new_uid, uid_t old_uid, uid_t euid) // (new_euid)
 int ksu_handle_setuid(uid_t new_uid, uid_t old_uid, uid_t euid)
 {
     // We only interest in process spwaned by zygote
-    if (!ksu_is_sid_equal(current_cred(), ksu_zygote_sid)) {
+    if (!is_zygote(current_cred())) {
         return 0;
     }
 

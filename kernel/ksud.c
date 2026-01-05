@@ -79,11 +79,6 @@ bool ksu_execveat_hook __read_mostly = true;
 bool ksu_input_hook __read_mostly = true;
 #endif
 
-u32 ksu_file_sid;
-
-// Detect whether it is on or not
-static bool is_boot_phase = true;
-
 void on_post_fs_data(void)
 {
     static bool done = false;
@@ -93,16 +88,11 @@ void on_post_fs_data(void)
     }
     done = true;
     pr_info("on_post_fs_data!\n");
+
     ksu_load_allow_list();
     ksu_observer_init();
     // sanity check, this may influence the performance
     stop_input_hook();
-
-    // End of boot state
-    is_boot_phase = false;
-
-    ksu_file_sid = ksu_get_ksu_file_sid();
-    pr_info("ksu_file sid: %d\n", ksu_file_sid);
 }
 
 extern void ext4_unregister_sysfs(struct super_block *sb);
@@ -269,6 +259,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
             check_argv(*argv, 1, "second_stage", buf, sizeof(buf))) {
             pr_info("/system/bin/init second_stage executed via argv1 check\n");
             apply_kernelsu_rules();
+            cache_sid();
             setup_ksu_cred();
             init_second_stage_executed = true;
         }
@@ -285,6 +276,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
                 check_argv(*argv, 1, "--second-stage", buf, sizeof(buf))) {
                 pr_info("/init second_stage executed via argv1 check\n");
                 apply_kernelsu_rules();
+                cache_sid();
                 setup_ksu_cred();
                 init_second_stage_executed = true;
             }
@@ -315,6 +307,7 @@ int ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr,
                          !strcmp(env_value, "true"))) {
                         pr_info("/init second_stage executed via envp check\n");
                         apply_kernelsu_rules();
+                        cache_sid();
                         setup_ksu_cred();
                         init_second_stage_executed = true;
                         break;
@@ -839,6 +832,5 @@ void ksu_ksud_exit(void)
 #ifdef CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
     vol_detector_exit();
 #endif
-    is_boot_phase = false;
     volumedown_pressed_count = 0;
 }
