@@ -162,7 +162,6 @@ struct ksu_enable_uid_scanner_cmd {
 #define KSU_IOCTL_ENABLE_KPM _IOC(_IOC_READ, 'K', 102, 0)
 #define KSU_IOCTL_DYNAMIC_MANAGER _IOC(_IOC_READ | _IOC_WRITE, 'K', 103, 0)
 #define KSU_IOCTL_GET_MANAGERS _IOC(_IOC_READ | _IOC_WRITE, 'K', 104, 0)
-#define KSU_IOCTL_ENABLE_UID_SCANNER _IOC(_IOC_READ | _IOC_WRITE, 'K', 105, 0)
 
 // IOCTL handler types
 typedef int (*ksu_ioctl_handler_t)(void __user *arg);

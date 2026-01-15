@@ -32,14 +32,11 @@
 #ifdef KSU_TP_HOOK
 #include "syscall_hook_manager.h"
 #endif
-#include "throne_comm.h"
 #include "dynamic_manager.h"
 
 #ifdef CONFIG_KSU_SUSFS
 bool susfs_is_boot_completed_triggered __read_mostly = false;
 #endif // #ifdef CONFIG_KSU_SUSFS
-
-bool ksu_uid_scanner_enabled = false;
 
 // Permission check functions
 bool only_manager(void)
@@ -71,17 +68,6 @@ bool allowed_for_su(void)
                                       is_allowed);
 #endif
     return is_allowed;
-}
-
-static void init_uid_scanner(void)
-{
-    ksu_throne_comm_load_state();
-    if (ksu_uid_scanner_enabled) {
-        int ret = ksu_throne_comm_init();
-        if (ret != 0) {
-            pr_err("Failed to initialize throne communication: %d\n", ret);
-        }
-    }
 }
 
 static int do_grant_root(void __user *arg)
@@ -129,7 +115,6 @@ static int do_report_event(void __user *arg)
             post_fs_data_lock = true;
             pr_info("post-fs-data triggered\n");
             on_post_fs_data();
-            init_uid_scanner();
 #if __SULOG_GATE
             ksu_sulog_init();
 #endif
@@ -729,68 +714,6 @@ static int do_get_managers(void __user *arg)
     return 0;
 }
 
-static int do_enable_uid_scanner(void __user *arg)
-{
-    struct ksu_enable_uid_scanner_cmd cmd;
-
-    if (copy_from_user(&cmd, arg, sizeof(cmd))) {
-        pr_err("enable_uid_scanner: copy_from_user failed\n");
-        return -EFAULT;
-    }
-
-    switch (cmd.operation) {
-    case UID_SCANNER_OP_GET_STATUS: {
-        bool status = ksu_uid_scanner_enabled;
-        if (copy_to_user((void __user *)cmd.status_ptr, &status,
-                         sizeof(status))) {
-            pr_err("enable_uid_scanner: copy status failed\n");
-            return -EFAULT;
-        }
-        break;
-    }
-    case UID_SCANNER_OP_TOGGLE: {
-        bool enabled = cmd.enabled;
-
-        if (enabled == ksu_uid_scanner_enabled) {
-            pr_info("enable_uid_scanner: no need to change, already %s\n",
-                    enabled ? "enabled" : "disabled");
-            break;
-        }
-
-        if (enabled) {
-            // Enable UID scanner
-            int ret = ksu_throne_comm_init();
-            if (ret != 0) {
-                pr_err("enable_uid_scanner: failed to initialize: %d\n", ret);
-                return -EFAULT;
-            }
-            pr_info("enable_uid_scanner: enabled\n");
-        } else {
-            // Disable UID scanner
-            ksu_throne_comm_exit();
-            pr_info("enable_uid_scanner: disabled\n");
-        }
-
-        ksu_uid_scanner_enabled = enabled;
-        ksu_throne_comm_save_state();
-        break;
-    }
-    case UID_SCANNER_OP_CLEAR_ENV: {
-        // Clear environment (force exit)
-        ksu_throne_comm_exit();
-        ksu_uid_scanner_enabled = false;
-        ksu_throne_comm_save_state();
-        pr_info("enable_uid_scanner: environment cleared\n");
-        break;
-    }
-    default:
-        pr_err("enable_uid_scanner: invalid operation\n");
-        return -EINVAL;
-    }
-
-    return 0;
-}
-
 // IOCTL handlers mapping table
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
     { .cmd = KSU_IOCTL_GRANT_ROOT,
@@ -884,10 +807,6 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
     { .cmd = KSU_IOCTL_GET_MANAGERS,
       .name = "GET_MANAGERS",
       .handler = do_get_managers,
-      .perm_check = manager_or_root },
-    { .cmd = KSU_IOCTL_ENABLE_UID_SCANNER,
-      .name = "SET_ENABLE_UID_SCANNER",
-      .handler = do_enable_uid_scanner,
       .perm_check = manager_or_root },
 #ifdef CONFIG_KPM
     { .cmd = KSU_IOCTL_KPM,

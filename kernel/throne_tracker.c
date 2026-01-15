@@ -16,7 +16,6 @@
 #include "apk_sign.h"
 #include "kernel_compat.h"
 #include "dynamic_manager.h"
-#include "throne_comm.h"
 
 uid_t ksu_manager_uid = KSU_INVALID_UID;
 static uid_t locked_manager_uid = KSU_INVALID_UID;
@@ -419,71 +418,56 @@ void track_throne(bool prune_only)
     // init uid list head
     INIT_LIST_HEAD(&uid_list);
 
-    if (ksu_uid_scanner_enabled) {
-        pr_info("Scanning %s directory..\n", KSU_UID_LIST_PATH);
-
-        if (uid_from_um_list(&uid_list) == 0) {
-            pr_info("Loaded UIDs from %s success\n", KSU_UID_LIST_PATH);
-            goto uid_ready;
-        }
-
-        pr_warn("%s read failed, fallback to %s\n", KSU_UID_LIST_PATH,
-                SYSTEM_PACKAGES_LIST_PATH);
+    fp = ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+    if (IS_ERR(fp)) {
+        pr_err("%s: open " SYSTEM_PACKAGES_LIST_PATH " failed: %ld\n", __func__,
+               PTR_ERR(fp));
+        return;
     }
 
-    {
-        fp = ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
-        if (IS_ERR(fp)) {
-            pr_err("%s: open " SYSTEM_PACKAGES_LIST_PATH " failed: %ld\n",
-                   __func__, PTR_ERR(fp));
-            return;
+    for (;;) {
+        struct uid_data *data = NULL;
+        ssize_t count = ksu_kernel_read_compat(fp, &chr, sizeof(chr), &pos);
+        const char *delim = " ";
+        char *package = NULL;
+        char *tmp = NULL;
+        char *uid = NULL;
+        u32 res;
+
+        if (count != sizeof(chr))
+            break;
+        if (chr != '\n')
+            continue;
+
+        count = ksu_kernel_read_compat(fp, buf, sizeof(buf), &line_start);
+        data = kzalloc(sizeof(struct uid_data), GFP_ATOMIC);
+        if (!data) {
+            filp_close(fp, 0);
+            goto out;
         }
 
-        for (;;) {
-            struct uid_data *data = NULL;
-            ssize_t count = ksu_kernel_read_compat(fp, &chr, sizeof(chr), &pos);
-            const char *delim = " ";
-            char *package = NULL;
-            char *tmp = NULL;
-            char *uid = NULL;
-            u32 res;
+        tmp = buf;
 
-            if (count != sizeof(chr))
-                break;
-            if (chr != '\n')
-                continue;
-
-            count = ksu_kernel_read_compat(fp, buf, sizeof(buf), &line_start);
-            data = kzalloc(sizeof(struct uid_data), GFP_ATOMIC);
-            if (!data) {
-                filp_close(fp, 0);
-                goto out;
-            }
-
-            tmp = buf;
-
-            package = strsep(&tmp, delim);
-            uid = strsep(&tmp, delim);
-            if (!uid || !package) {
-                pr_err("update_uid: package or uid is NULL!\n");
-                break;
-            }
-
-            if (kstrtou32(uid, 10, &res)) {
-                pr_err("update_uid: uid parse err\n");
-                break;
-            }
-            data->uid = res;
-            strncpy(data->package, package, KSU_MAX_PACKAGE_NAME);
-            list_add_tail(&data->list, &uid_list);
-            // reset line start
-            line_start = pos;
+        package = strsep(&tmp, delim);
+        uid = strsep(&tmp, delim);
+        if (!uid || !package) {
+            pr_err("update_uid: package or uid is NULL!\n");
+            break;
         }
 
-        filp_close(fp, 0);
+        if (kstrtou32(uid, 10, &res)) {
+            pr_err("update_uid: uid parse err\n");
+            break;
+        }
+        data->uid = res;
+        strncpy(data->package, package, KSU_MAX_PACKAGE_NAME);
+        list_add_tail(&data->list, &uid_list);
+        // reset line start
+        line_start = pos;
     }
 
-uid_ready:
+    filp_close(fp, 0);
+
     if (prune_only)
         goto prune;
 
