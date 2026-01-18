@@ -57,8 +57,7 @@ pub fn validate_module_id(module_id: &str) -> Result<()> {
         Ok(())
     } else {
         Err(anyhow!(
-            "Invalid module ID: '{}'. Must match /^[a-zA-Z][a-zA-Z0-9._-]+$/",
-            module_id
+            "Invalid module ID: '{module_id}'. Must match /^[a-zA-Z][a-zA-Z0-9._-]+$/",
         ))
     }
 }
