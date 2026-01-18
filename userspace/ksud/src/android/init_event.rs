@@ -7,8 +7,8 @@ use log::{info, warn};
 use crate::android::kpm;
 use crate::{
     android::{
-        ksucalls, metamodule,
-        module::{self, handle_updated_modules, prune_modules},
+        ksucalls,
+        module::{self, handle_updated_modules, metamodule, prune_modules},
         restorecon,
         utils::{self, is_safe_mode},
     },
@@ -21,7 +21,7 @@ pub fn on_post_data_fs() -> Result<()> {
     utils::umask(0);
 
     // Clear all temporary module configs early
-    if let Err(e) = crate::android::module_config::clear_all_temp_configs() {
+    if let Err(e) = crate::android::module::module_config::clear_all_temp_configs() {
         warn!("clear temp configs failed: {e}");
     }
 

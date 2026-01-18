@@ -1,3 +1,6 @@
+pub mod metamodule;
+pub mod module_config;
+
 #[cfg(unix)]
 use std::os::unix::{prelude::PermissionsExt, process::CommandExt};
 use std::{
@@ -18,22 +21,19 @@ use log::{debug, info, warn};
 use regex_lite::Regex;
 use zip_extensions::zip_extract_file_to_memory;
 
+use crate::{
+    android::module::ModuleType::{Active, All},
+    defs::{MODULE_DIR, MODULE_UPDATE_DIR, UPDATE_FILE_NAME},
+};
 #[allow(clippy::wildcard_imports)]
 use crate::{
     android::{
-        ksucalls, metamodule,
+        ksucalls,
         restorecon::{restore_syscon, setsyscon},
         sepolicy,
         utils::*,
     },
     assets, defs,
-};
-use crate::{
-    android::{
-        module::ModuleType::{Active, All},
-        module_config,
-    },
-    defs::{MODULE_DIR, MODULE_UPDATE_DIR, UPDATE_FILE_NAME},
 };
 
 const INSTALLER_CONTENT: &str = include_str!("./installer.sh");
@@ -406,7 +406,7 @@ fn install_module_to_system(zip: &str) -> Result<()> {
     ensure_boot_completed()?;
 
     // print banner
-    println!(include_str!("banner"));
+    println!(include_str!("../banner"));
 
     assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
 

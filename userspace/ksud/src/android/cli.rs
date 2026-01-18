@@ -9,8 +9,9 @@ use log::LevelFilter;
 use crate::android::susfs;
 use crate::{
     android::{
-        debug, feature, init_event, ksucalls, module, module_config, profile, sepolicy, su, umount,
-        utils,
+        debug, feature, init_event, ksucalls,
+        module::{self, module_config},
+        profile, sepolicy, su, umount, utils,
     },
     apk_sign, assets,
     boot_patch::{BootPatchArgs, BootRestoreArgs},
