@@ -104,12 +104,6 @@ struct ksu_add_try_umount_cmd {
     __u8 mode; // denotes what to do with it 0:wipe_list 1:add_to_list 2:delete_entry
 };
 
-// List current umount entries
-struct ksu_list_try_umount_cmd {
-    __aligned_u64 arg; // User buffer
-    __u32 buf_size; // Buffer size provided by userspace
-};
-
 #define KSU_UMOUNT_WIPE 0 // ignore everything and wipe list
 #define KSU_UMOUNT_ADD 1 // add entry (path + flags)
 #define KSU_UMOUNT_DEL 2 // delete entry, strcmp
@@ -127,30 +121,18 @@ struct ksu_enable_kpm_cmd {
     __u8 enabled; // Output: true if KPM is enabled
 };
 
+#define DYNAMIC_MANAGER_OP_SET 0
+#define DYNAMIC_MANAGER_OP_GET 1
+#define DYNAMIC_MANAGER_OP_CLEAR 2
 struct ksu_dynamic_manager_cmd {
-    struct dynamic_manager_user_config
-        config; // Input/Output: dynamic manager config
+    unsigned int operation;
+    unsigned int size;
+    char hash[65];
 };
 
 struct ksu_get_managers_cmd {
     struct manager_list_info manager_info; // Output: manager list information
 };
-
-struct ksu_enable_uid_scanner_cmd {
-    __u32 operation; // Input: operation type (UID_SCANNER_OP_GET_STATUS, UID_SCANNER_OP_TOGGLE, UID_SCANNER_OP_CLEAR_ENV)
-    __u32 enabled; // Input: enable or disable (for UID_SCANNER_OP_TOGGLE)
-    void __user *
-        status_ptr; // Input: pointer to store status (for UID_SCANNER_OP_GET_STATUS)
-};
-
-#ifdef CONFIG_KSU_MANUAL_SU
-struct ksu_manual_su_cmd {
-    __u32 option; // Input: operation type (MANUAL_SU_OP_GENERATE_TOKEN, MANUAL_SU_OP_ESCALATE, MANUAL_SU_OP_ADD_PENDING)
-    __u32 target_uid; // Input: target UID
-    __u32 target_pid; // Input: target PID
-    char token_buffer[33]; // Input/Output: token buffer
-};
-#endif
 
 // IOCTL command definitions
 #define KSU_IOCTL_GRANT_ROOT _IOC(_IOC_NONE, 'K', 1, 0)
@@ -177,11 +159,6 @@ struct ksu_manual_su_cmd {
 #define KSU_IOCTL_ENABLE_KPM _IOC(_IOC_READ, 'K', 102, 0)
 #define KSU_IOCTL_DYNAMIC_MANAGER _IOC(_IOC_READ | _IOC_WRITE, 'K', 103, 0)
 #define KSU_IOCTL_GET_MANAGERS _IOC(_IOC_READ | _IOC_WRITE, 'K', 104, 0)
-#define KSU_IOCTL_ENABLE_UID_SCANNER _IOC(_IOC_READ | _IOC_WRITE, 'K', 105, 0)
-#ifdef CONFIG_KSU_MANUAL_SU
-#define KSU_IOCTL_MANUAL_SU _IOC(_IOC_READ | _IOC_WRITE, 'K', 106, 0)
-#endif
-#define KSU_IOCTL_LIST_TRY_UMOUNT _IOC(_IOC_READ | _IOC_WRITE, 'K', 301, 0)
 
 // IOCTL handler types
 typedef int (*ksu_ioctl_handler_t)(void __user *arg);

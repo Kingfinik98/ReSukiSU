@@ -1,6 +1,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/task_work.h>
+#include <linux/version.h>
 #include <linux/cred.h>
 #include <linux/fs.h>
 #include <linux/mount.h>
@@ -9,9 +10,20 @@
 #include <linux/path.h>
 #include <linux/printk.h>
 #include <linux/types.h>
+#include <linux/uaccess.h>
 
+#ifndef KSU_HAS_PATH_UMOUNT
+#include <linux/syscalls.h>
+#endif
+
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+#endif // #ifdef CONFIG_KSU_SUSFS
+
+#include "manager.h"
 #include "kernel_umount.h"
 #include "klog.h" // IWYU pragma: keep
+#include "kernel_compat.h"
 #include "allowlist.h"
 #include "selinux/selinux.h"
 #include "feature.h"
@@ -43,15 +55,44 @@ static const struct ksu_feature_handler kernel_umount_handler = {
     .set_handler = kernel_umount_feature_set,
 };
 
-extern int path_umount(struct path *path, int flags);
+#ifdef CONFIG_KSU_SUSFS
+extern bool susfs_is_log_enabled;
+#endif // #ifdef CONFIG_KSU_SUSFS
 
-static void ksu_umount_mnt(struct path *path, int flags)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) ||                           \
+    defined(KSU_HAS_PATH_UMOUNT)
+extern int path_umount(struct path *path, int flags);
+static void ksu_umount_mnt(const char *__never_use_mnt, struct path *path,
+                           int flags)
 {
     int err = path_umount(path, flags);
     if (err) {
         pr_info("umount %s failed: %d\n", path->dentry->d_iname, err);
     }
 }
+#else
+static void ksu_sys_umount(const char *mnt, int flags)
+{
+    char __user *usermnt = (char __user *)mnt;
+    mm_segment_t old_fs;
+
+    old_fs = get_fs();
+    set_fs(KERNEL_DS);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+    ksys_umount(usermnt, flags);
+#else
+    sys_umount(usermnt, flags); // cuz asmlinkage long sys##name
+#endif
+    set_fs(old_fs);
+}
+
+#define ksu_umount_mnt(mnt, __unused, flags)                                   \
+    ({                                                                         \
+        path_put(__unused);                                                    \
+        ksu_sys_umount(mnt, flags);                                            \
+    })
+
+#endif
 
 void try_umount(const char *mnt, int flags)
 {
@@ -67,7 +108,7 @@ void try_umount(const char *mnt, int flags)
         return;
     }
 
-    ksu_umount_mnt(&path, flags);
+    ksu_umount_mnt(mnt, &path, flags);
 }
 
 struct umount_tw {
@@ -93,18 +134,16 @@ static void umount_tw_func(struct callback_head *cb)
     kfree(tw);
 }
 
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+extern void susfs_run_sus_path_loop(uid_t uid);
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern void susfs_reorder_mnt_id(void);
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+
 int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
 {
     struct umount_tw *tw;
-
-    // if there isn't any module mounted, just ignore it!
-    if (!ksu_module_mounted) {
-        return 0;
-    }
-
-    if (!ksu_kernel_umount_enabled) {
-        return 0;
-    }
 
     if (!ksu_cred) {
         return 0;
@@ -124,18 +163,17 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
         return 0;
     }
 
-    // check old process's selinux context, if it is not zygote, ignore it!
-    // because some su apps may setuid to untrusted_app but they are in global mount namespace
-    // when we umount for such process, that is a disaster!
-    // also handle case 4 and 5
-    bool is_zygote_child = is_zygote(get_current_cred());
-    if (!is_zygote_child) {
-        pr_info("handle umount ignore non zygote child: %d\n", current->pid);
-        return 0;
+    // no need check zygote there, because we already check in setuid call
+
+    if (!ksu_kernel_umount_enabled) { // in susfs's impl, it ignore ksu_kernel_umount feature, keep same behavior
+        goto do_susfs_logic;
     }
-#if __SULOG_GATE
-    ksu_sulog_report_syscall(new_uid, NULL, "setuid", NULL);
-#endif
+
+    // if there isn't any module mounted, just ignore it!
+    if (!ksu_module_mounted) {
+        goto do_susfs_logic;
+    }
+
     // umount the target mnt
     pr_info("handle umount for uid: %d, pid: %d\n", new_uid, current->pid);
 
@@ -150,6 +188,23 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
         kfree(tw);
         pr_warn("unmount add task_work failed\n");
     }
+
+do_susfs_logic:
+    // do susfs setuid when susfs enabled
+#ifdef CONFIG_KSU_SUSFS
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+    // We can reorder the mnt_id now after all sus mounts are umounted
+    susfs_reorder_mnt_id();
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+    susfs_run_sus_path_loop(new_uid);
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
+
+    susfs_set_current_proc_umounted();
+
+#endif
 
     return 0;
 }
