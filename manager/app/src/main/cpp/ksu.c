@@ -281,14 +281,37 @@ bool clear_dynamic_manager(void)
 	return ksuctl(KSU_IOCTL_DYNAMIC_MANAGER, &cmd) == 0;
 }
 
-bool get_managers_list(struct manager_list_info *info)
-{
-	if (!info)
-		return false;
-	struct ksu_get_managers_cmd cmd = {0};
-	if (ksuctl(KSU_IOCTL_GET_MANAGERS, &cmd) != 0)
-		return false;
+/**
+ * Get active manager list
+ * @param out_cmd count, total_count, managers's out ptr
+ * @return true on success, false on failure
+ * @warning dynamic alloc memory INTERNALLY!!!
+ */
+bool get_managers_list(struct ksu_get_managers_cmd **out_cmd) {
+    if (!out_cmd) return false;
 
-	*info = cmd.manager_info;
-	return true;
+    struct ksu_get_managers_cmd probe = {.count = 0};
+    if (ksuctl(KSU_IOCTL_GET_MANAGERS, &probe) != 0) {
+        return false;
+    }
+
+    if (probe.total_count == 0) { // it shouldn't happen, but just in case...
+        *out_cmd = nullptr;
+        return false;
+    }
+
+    size_t payload_size = sizeof((*out_cmd)->managers[0]) * probe.total_count;
+    size_t total_size = sizeof(struct ksu_get_managers_cmd) + payload_size;
+
+    struct ksu_get_managers_cmd *cmd = malloc(total_size);
+    if (!cmd) return false;
+
+    cmd->count = probe.total_count;
+    if (ksuctl(KSU_IOCTL_GET_MANAGERS, cmd) != 0) {
+        free(cmd);
+        return false;
+    }
+
+    *out_cmd = cmd;
+    return true;
 }

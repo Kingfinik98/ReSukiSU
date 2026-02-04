@@ -7,6 +7,7 @@
 #include <string.h>
 #include <linux/capability.h>
 #include <pwd.h>
+#include <stdlib.h>
 
 NativeBridgeNP(getVersion, jint) {
     uint32_t version = get_version();
@@ -381,33 +382,44 @@ NativeBridgeNP(clearDynamicManager, jboolean) {
 
 // Get a list of active managers
 NativeBridgeNP(getManagersList, jobject) {
-	struct manager_list_info managerListInfo;
-	bool result = get_managers_list(&managerListInfo);
+    struct ksu_get_managers_cmd *cmd = nullptr;
 
-	if (!result) {
-		LogDebug("getManagersList: failed to get active managers list");
-		return NULL;
-	}
+    bool result = get_managers_list(&cmd);
 
-	jobject obj = CREATE_JAVA_OBJECT("com/resukisu/resukisu/Natives$ManagersList");
-	jclass managerListCls = GetEnvironment()->FindClass(env, "com/resukisu/resukisu/Natives$ManagersList");
+    if (!result) {
+        LogDebug("getManagersList: failed to get active managers list");
+        return NULL;
+    }
 
-	SET_INT_FIELD(obj, managerListCls, count, (jint)managerListInfo.count);
+    int count = (cmd != NULL) ? (int) cmd->count : 0;
 
-	jobject managersList = CREATE_ARRAYLIST();
+    jobject obj = CREATE_JAVA_OBJECT("com/resukisu/resukisu/Natives$ManagersList");
+    jclass managerListCls = GetEnvironment()->FindClass(env,
+                                                        "com/resukisu/resukisu/Natives$ManagersList");
 
-	for (int i = 0; i < managerListInfo.count; i++) {
-		jobject managerInfo = CREATE_JAVA_OBJECT_WITH_PARAMS(
-				"com/resukisu/resukisu/Natives$ManagerInfo",
-				"(II)V",
-				(jint)managerListInfo.managers[i].uid,
-				(jint)managerListInfo.managers[i].signature_index
-		);
-		ADD_TO_LIST(managersList, managerInfo);
-	}
+    SET_INT_FIELD(obj, managerListCls, count, (jint) count);
 
-	SET_OBJECT_FIELD(obj, managerListCls, managers, managersList);
+    jobject managersList = CREATE_ARRAYLIST();
 
-	LogDebug("getManagersList: count=%d", managerListInfo.count);
-	return obj;
+    if (cmd && count > 0) {
+        for (int i = 0; i < count; i++) {
+            jobject managerInfo = CREATE_JAVA_OBJECT_WITH_PARAMS(
+                    "com/resukisu/resukisu/Natives$ManagerInfo",
+                    "(II)V",
+                    (jint) cmd->managers[i].uid,
+                    (jint) cmd->managers[i].signature_index
+            );
+            ADD_TO_LIST(managersList, managerInfo);
+        }
+    }
+
+    SET_OBJECT_FIELD(obj, managerListCls, managers, managersList);
+
+    LogDebug("getManagersList: count=%d", count);
+
+    if (cmd) {
+        free(cmd);
+    }
+
+    return obj;
 }
